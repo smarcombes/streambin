@@ -1,0 +1,39 @@
+{
+  "name": "@streambin/crypto",
+  "version": "0.1.0",
+  "description": "End-to-end encryption primitives for Streambin using Web Crypto API",
+  "license": "MIT",
+  "author": "Streambin Contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smarcombes/streambin"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "dev": "tsup src/index.ts --watch --format esm --dts",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@streambin/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
+    "eslint": "^9.39.0"
+  }
+}

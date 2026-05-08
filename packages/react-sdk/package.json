@@ -1,0 +1,52 @@
+{
+  "name": "@streambin/react-sdk",
+  "version": "0.1.0",
+  "description": "React hooks for Streambin - end-to-end encrypted streams and documents",
+  "license": "MIT",
+  "author": "Streambin Contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smarcombes/streambin"
+  },
+  "keywords": [
+    "streambin",
+    "react",
+    "hooks",
+    "encryption",
+    "e2e",
+    "streams",
+    "realtime"
+  ],
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "dev": "tsup src/index.ts --watch --format esm --dts",
+    "lint": "eslint src",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "dependencies": {
+    "@streambin/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
+    "eslint": "^9.39.0"
+  }
+}

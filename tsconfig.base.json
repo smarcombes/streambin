@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@streambin/shared": ["packages/shared/src/index.ts"],
+      "@streambin/crypto": ["packages/crypto/src/index.ts"],
+      "@streambin/sdk": ["packages/sdk/src/index.ts"],
+      "@streambin/react-sdk": ["packages/react-sdk/src/index.ts"]
+    },
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "isolatedModules": true
+  }
+}

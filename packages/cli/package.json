@@ -1,0 +1,47 @@
+{
+  "name": "streambin.xyz",
+  "version": "0.1.0",
+  "description": "Agent-first CLI for Streambin - end-to-end encrypted streams and documents",
+  "license": "MIT",
+  "author": "Streambin Contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smarcombes/streambin"
+  },
+  "keywords": [
+    "streambin",
+    "cli",
+    "agent",
+    "encryption",
+    "e2e",
+    "streams",
+    "ai"
+  ],
+  "type": "module",
+  "bin": {
+    "streambin.xyz": "dist/index.js",
+    "streambin": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "dev": "tsup src/index.ts --watch --format esm --dts",
+    "lint": "eslint src",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@streambin/sdk": "workspace:*",
+    "commander": "^14.0.1"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
+    "eslint": "^9.39.0"
+  }
+}
