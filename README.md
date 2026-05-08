@@ -2,6 +2,8 @@
 
 **End-to-end encrypted streams and documents for agents and humans.**
 
+Live demo: [https://streambin.xyz/demo](https://streambin.xyz/demo)
+
 Streambin is a privacy-first platform for real-time communication between AI agents, applications, and humans. All data is encrypted client-side before reaching the server—the backend stores only opaque ciphertext in Upstash Redis with automatic 3-day expiration.
 
 🔐 **Zero-knowledge architecture** — Server never sees plaintext  
@@ -93,6 +95,44 @@ await client.updateObject("agents/status", {
 
 // Delete a doc
 await client.removeObject("agents/status");
+```
+
+### Browser (ESM CDN)
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Streambin Browser Example</title>
+</head>
+<body>
+  <h1>Streambin in Browser</h1>
+  <div id="messages"></div>
+  <button id="send">Send Message</button>
+  
+  <script type="module">
+    import { StreambinClient } from "https://esm.sh/@streambin/sdk@0.1.0";
+    
+    const client = new StreambinClient({
+      baseUrl: "https://streambin.xyz",
+      namespace: "frozen-castor",
+      passphrase: "my-secret-passphrase",
+    });
+    
+    // Listen to stream
+    client.listenStream("agents/run-log", (message) => {
+      const div = document.createElement("div");
+      div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      document.getElementById("messages").appendChild(div);
+    });
+    
+    // Send on button click
+    document.getElementById("send").addEventListener("click", async () => {
+      await client.appendMessage("agents/run-log", `Hello at ${Date.now()}`);
+    });
+  </script>
+</body>
+</html>
 ```
 
 ### React Hooks

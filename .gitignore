@@ -2,3 +2,8 @@
 node_modules
 .turbo
 .vercel
+dist
+
+# publish script temp files
+package.json.bak
+package.json.publish

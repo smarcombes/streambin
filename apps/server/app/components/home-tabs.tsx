@@ -8,7 +8,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 
-type TabKey = "typescript" | "react" | "cli" | "curl" | "http" | "python";
+type TabKey = "typescript" | "browser" | "react" | "cli" | "curl" | "http" | "python";
 
 type Variables = {
   namespace: string;
@@ -100,6 +100,140 @@ const client = new StreambinClient(bucketConfig);`,
         title: "Delete a doc",
         language: "typescript",
         render: ({ path }) => `await client.removeObject("${path}");`,
+      },
+    ],
+  },
+  browser: {
+    label: "Browser",
+    actions: [
+      {
+        id: "setup",
+        title: "Import from CDN",
+        language: "typescript",
+        render: ({ namespace }) => `<script type="module">
+import { StreambinClient } from "https://esm.sh/@streambin/sdk@0.1.0";
+
+const bucketConfig = {
+  baseUrl: "https://streambin.xyz",
+  namespace: "${namespace}",
+  passphrase: "my-secret-passphrase",
+};
+
+const client = new StreambinClient(bucketConfig);
+</script>`,
+      },
+      {
+        id: "post-stream",
+        title: "Post to a stream",
+        language: "typescript",
+        render: ({ path }) => `// After importing StreambinClient
+await client.appendMessage("${path}", "hello from browser");`,
+      },
+      {
+        id: "listen-stream",
+        title: "Listen to a stream",
+        language: "typescript",
+        render: ({ path }) => `// After importing StreambinClient
+const stop = client.listenStream("${path}", (message) => {
+  console.log("New message:", message);
+  document.getElementById("messages").innerHTML += 
+    \`<div>\${message}</div>\`;
+});
+
+// Stop listening when done
+// stop();`,
+      },
+      {
+        id: "get-last-messages",
+        title: "Get the last messages",
+        language: "typescript",
+        render: ({ path }) => `// After importing StreambinClient
+const events = await client.getStream("${path}", {
+  after: Date.now() - 3600000, // last hour
+  limit: 10,
+});
+
+console.log("Messages:", events.map(e => e.value));`,
+      },
+      {
+        id: "save-doc",
+        title: "Save a doc",
+        language: "typescript",
+        render: ({ path }) => `// After importing StreambinClient
+await client.setObject("${path}", {
+  step: "running",
+  timestamp: Date.now(),
+});`,
+      },
+      {
+        id: "watch-doc",
+        title: "Watch doc for changes",
+        language: "typescript",
+        render: ({ path }) => `// After importing StreambinClient
+const stop = client.listenObject("${path}", (value) => {
+  console.log("Doc changed:", value);
+  document.getElementById("status").textContent = 
+    JSON.stringify(value, null, 2);
+});
+
+// Stop watching when done
+// stop();`,
+      },
+      {
+        id: "update-doc",
+        title: "Update a doc",
+        language: "typescript",
+        render: ({ path }) => `// After importing StreambinClient
+await client.updateObject("${path}", (current) => ({
+  ...(current ?? {}),
+  attempts: ((current?.attempts as number) ?? 0) + 1,
+  lastUpdated: Date.now(),
+}));`,
+      },
+      {
+        id: "delete-doc",
+        title: "Delete a doc",
+        language: "typescript",
+        render: ({ path }) => `// After importing StreambinClient
+await client.removeObject("${path}");`,
+      },
+      {
+        id: "full-example",
+        title: "Complete HTML example",
+        language: "typescript",
+        render: ({ namespace, path }) => `<!DOCTYPE html>
+<html>
+<head>
+  <title>Streambin Browser Example</title>
+</head>
+<body>
+  <h1>Streambin in Browser</h1>
+  <div id="messages"></div>
+  <button id="send">Send Message</button>
+  
+  <script type="module">
+    import { StreambinClient } from "https://esm.sh/@streambin/sdk@0.1.0";
+    
+    const client = new StreambinClient({
+      baseUrl: "https://streambin.xyz",
+      namespace: "${namespace}",
+      passphrase: "my-secret-passphrase",
+    });
+    
+    // Listen to stream
+    client.listenStream("${path}", (message) => {
+      const div = document.createElement("div");
+      div.textContent = \`[\${new Date().toLocaleTimeString()}] \${message}\`;
+      document.getElementById("messages").appendChild(div);
+    });
+    
+    // Send on button click
+    document.getElementById("send").addEventListener("click", async () => {
+      await client.appendMessage("${path}", \`Hello at \${Date.now()}\`);
+    });
+  </script>
+</body>
+</html>`,
       },
     ],
   },

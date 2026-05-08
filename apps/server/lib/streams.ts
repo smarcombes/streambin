@@ -39,12 +39,17 @@ export async function getStreamEvents(
   const limit = Math.max(1, Math.min(options?.limit ?? 100, 100));
 
   const redis = getRedis();
-  const rawItems = (await redis.lrange<string>(key, -MAX_SCAN_ITEMS, -1)) ?? [];
+  // Upstash REST lrange behavior is more reliable with explicit 0..-1 range.
+  // We cap the scanned window in-memory to avoid unbounded parsing.
+  const rawItems = ((await redis.lrange<unknown>(key, 0, -1)) ?? []).slice(-MAX_SCAN_ITEMS);
 
   const parsed: StreamEventEnvelope[] = [];
   for (const raw of rawItems) {
     try {
-      const event = JSON.parse(raw) as StreamEventEnvelope;
+      const event =
+        typeof raw === "string"
+          ? (JSON.parse(raw) as StreamEventEnvelope)
+          : (raw as StreamEventEnvelope);
       if (event.timestamp > after) {
         parsed.push(event);
       }

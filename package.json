@@ -1,6 +1,6 @@
 {
   "name": "streambin-monorepo",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "packageManager": "pnpm@10.32.0",
   "scripts": {
@@ -8,7 +8,9 @@
     "dev": "turbo run dev --parallel",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "e2e": "node e2e-test.mjs",
+    "publish": "./publish.sh"
   },
   "devDependencies": {
     "turbo": "^2.5.8",

@@ -1,6 +1,6 @@
 {
   "name": "@streambin/shared",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Shared constants and types for Streambin",
   "license": "MIT",
   "author": "Streambin Contributors",

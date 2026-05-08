@@ -17,6 +17,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@streambin/react-sdk':
+        specifier: ^0.1.2
+        version: 0.1.2(react@19.2.4)
       '@upstash/redis':
         specifier: ^1.35.6
         version: 1.38.0
@@ -856,6 +859,20 @@ packages:
 
   '@rtsao/scc@1.1.0':
     resolution: {integrity: sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==}
+
+  '@streambin/crypto@0.1.2':
+    resolution: {integrity: sha512-Npod8BsOQthrrfblKjxn9UFszn0s9aUmWggjbS93M8ipeGw0xs8ow+ZQiBZambnPXYMr7mAwE2ibaZ4BkNl4Dw==}
+
+  '@streambin/react-sdk@0.1.2':
+    resolution: {integrity: sha512-UeactlZz+65m3FwDXxl2PUsuzhJvUtM1P9Wa7jRoqly9KWoQywu1niu3qtn55AGixmQsQLIq8GBPI9UVYyV7eg==}
+    peerDependencies:
+      react: ^19.0.0
+
+  '@streambin/sdk@0.1.2':
+    resolution: {integrity: sha512-5insJZGv0qHISCzr/2RUoUcPy6/k5kMUlk/Z+wsulW9UPmz8CA7ABesA0cUTuv2ptqD2Plb3918ikyGh1RTjeg==}
+
+  '@streambin/shared@0.1.2':
+    resolution: {integrity: sha512-YnUDo9THyGOSbSi0+3cRWnPKSr0eGzKdwXoTApgYDcMZEAcQsSMpg/girfY7STJ8UuvBLaCwT2gEiAsuAJSkzw==}
 
   '@swc/helpers@0.5.15':
     resolution: {integrity: sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g==}
@@ -3349,6 +3366,22 @@ snapshots:
     optional: true
 
   '@rtsao/scc@1.1.0': {}
+
+  '@streambin/crypto@0.1.2':
+    dependencies:
+      '@streambin/shared': 0.1.2
+
+  '@streambin/react-sdk@0.1.2(react@19.2.4)':
+    dependencies:
+      '@streambin/sdk': 0.1.2
+      react: 19.2.4
+
+  '@streambin/sdk@0.1.2':
+    dependencies:
+      '@streambin/crypto': 0.1.2
+      '@streambin/shared': 0.1.2
+
+  '@streambin/shared@0.1.2': {}
 
   '@swc/helpers@0.5.15':
     dependencies:

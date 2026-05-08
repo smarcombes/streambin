@@ -92,6 +92,40 @@ describe("sdk", () => {
     });
   });
 
+  it("upserts on updateObject when doc GET returns 404", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+
+    const client = new StreambinClient({
+      baseUrl: "https://example.test",
+      namespace: "ns",
+      passphrase: "pw",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const updated = await client.updateObject<Record<string, unknown>>("profile", {
+      firstName: "Ada",
+      "photo.url": "https://example.test/photo.jpg",
+    });
+
+    expect(updated).toEqual({
+      firstName: "Ada",
+      photo: { url: "https://example.test/photo.jpg" },
+    });
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, "https://example.test/api/docs/ns/profile");
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "https://example.test/api/docs/ns/profile",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+  });
+
   it("removeObject writes tombstone then deletes doc", async () => {
     const fetchImpl = vi
       .fn()

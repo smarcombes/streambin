@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Streambin Browser Test</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #0a0a0a;
+      color: #fff;
+    }
+    h1 {
+      color: #60a5fa;
+    }
+    #messages {
+      border: 1px solid #333;
+      padding: 15px;
+      margin: 20px 0;
+      min-height: 200px;
+      max-height: 400px;
+      overflow-y: auto;
+      background: #1a1a1a;
+      border-radius: 8px;
+    }
+    .message {
+      padding: 8px;
+      margin: 5px 0;
+      background: #2a2a2a;
+      border-radius: 4px;
+      border-left: 3px solid #60a5fa;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin: 20px 0;
+    }
+    button {
+      padding: 10px 20px;
+      background: #60a5fa;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    button:hover {
+      background: #3b82f6;
+    }
+    button:disabled {
+      background: #333;
+      cursor: not-allowed;
+    }
+    input {
+      flex: 1;
+      padding: 10px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      background: #1a1a1a;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #888;
+    }
+    .status.connected {
+      color: #10b981;
+    }
+    #docValue {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      padding: 15px;
+      border-radius: 8px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔐 Streambin Browser Test</h1>
+  <p>Testing end-to-end encrypted streams and documents directly in the browser using ESM.sh CDN.</p>
+
+  <div class="controls">
+    <input type="text" id="namespaceInput" placeholder="Namespace (e.g. test-namespace)" />
+    <input type="text" id="pathInput" placeholder="Path (e.g. test/stream)" />
+    <button id="applyConfigBtn">Apply</button>
+  </div>
+  
+  <div class="status" id="status">Initializing...</div>
+  
+  <h2>Stream Messages</h2>
+  <div id="messages"></div>
+  
+  <div class="controls">
+    <input type="text" id="messageInput" placeholder="Type a message..." />
+    <button id="sendBtn" disabled>Send Message</button>
+  </div>
+  
+  <h2>Document Value</h2>
+  <div id="docValue">null</div>
+  
+  <div class="controls">
+    <button id="updateDocBtn" disabled>Update Doc Counter</button>
+    <button id="setDocBtn" disabled>Set Doc Status</button>
+    <button id="deleteDocBtn" disabled>Delete Doc</button>
+  </div>
+
+  <script type="module">
+    // Import StreambinClient from ESM.sh CDN
+    import { StreambinClient } from "https://esm.sh/@streambin/sdk@latest";
+
+    const DEFAULT_NAMESPACE = "test-namespace";
+    const DEFAULT_PATH = "test/stream";
+    const PASSPHRASE = "browser-test-passphrase";
+    
+    // DOM elements
+    const namespaceInput = document.getElementById("namespaceInput");
+    const pathInput = document.getElementById("pathInput");
+    const applyConfigBtn = document.getElementById("applyConfigBtn");
+    const messagesDiv = document.getElementById("messages");
+    const messageInput = document.getElementById("messageInput");
+    const sendBtn = document.getElementById("sendBtn");
+    const statusDiv = document.getElementById("status");
+    const docValueDiv = document.getElementById("docValue");
+    const updateDocBtn = document.getElementById("updateDocBtn");
+    const setDocBtn = document.getElementById("setDocBtn");
+    const deleteDocBtn = document.getElementById("deleteDocBtn");
+
+    let client = null;
+    let currentNamespace = DEFAULT_NAMESPACE;
+    let currentPath = DEFAULT_PATH;
+    let stopListening = () => {};
+    let stopWatching = () => {};
+    
+    // Add message to UI
+    function addMessage(text, type = "info") {
+      const div = document.createElement("div");
+      div.className = "message";
+      const time = new Date().toLocaleTimeString();
+      div.innerHTML = `<strong>[${time}]</strong> ${text}`;
+      messagesDiv.appendChild(div);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+    
+    // Update doc display
+    function updateDocDisplay(value) {
+      docValueDiv.textContent = value === null ? "null" : JSON.stringify(value, null, 2);
+    }
+
+    function getConfigFromUrl() {
+      const url = new URL(window.location.href);
+      const namespace = url.searchParams.get("namespace") || DEFAULT_NAMESPACE;
+      const path = url.searchParams.get("path") || DEFAULT_PATH;
+      return { namespace, path };
+    }
+
+    function syncUrl(namespace, path) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("namespace", namespace);
+      url.searchParams.set("path", path);
+      window.history.replaceState({}, "", url.toString());
+    }
+
+    function setStatus(text, connected = false) {
+      statusDiv.textContent = text;
+      statusDiv.className = connected ? "status connected" : "status";
+    }
+
+    function setControlsEnabled(enabled) {
+      sendBtn.disabled = !enabled;
+      updateDocBtn.disabled = !enabled;
+      setDocBtn.disabled = !enabled;
+      deleteDocBtn.disabled = !enabled;
+    }
+
+    function reconnect() {
+      stopListening();
+      stopWatching();
+      setControlsEnabled(false);
+      setStatus(`Connecting to ${currentNamespace}/${currentPath}...`);
+
+      client = new StreambinClient({
+        baseUrl: "https://streambin.xyz",
+        namespace: currentNamespace,
+        passphrase: PASSPHRASE,
+      });
+
+      addMessage(`🔌 Listening on ${currentNamespace}/${currentPath}`, "system");
+
+      stopListening = client.listenStream(
+        currentPath,
+        (message) => {
+          addMessage(`📨 ${message}`, "received");
+        },
+        {
+          onStatus: (connected) => {
+            setStatus(
+              connected
+                ? `✅ Connected to ${currentNamespace}/${currentPath}`
+                : `Reconnecting to ${currentNamespace}/${currentPath}...`,
+              connected,
+            );
+          },
+        },
+      );
+
+      stopWatching = client.listenObject(currentPath, (value) => {
+        console.log("📄 Doc changed:", value);
+        updateDocDisplay(value);
+        addMessage("📄 Document updated", "system");
+      });
+
+      setControlsEnabled(true);
+    }
+    
+    // Send message on button click
+    sendBtn.addEventListener("click", async () => {
+      const message = messageInput.value.trim();
+      if (!message) return;
+      
+      try {
+        await client.appendMessage(currentPath, message);
+        messageInput.value = "";
+      } catch (error) {
+        addMessage(`❌ Error: ${error.message}`, "error");
+      }
+    });
+    
+    // Send on Enter key
+    messageInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") sendBtn.click();
+    });
+    
+    // Update doc counter
+    updateDocBtn.addEventListener("click", async () => {
+      try {
+        await client.updateObject(currentPath, (current) => ({
+          ...(current ?? {}),
+          counter: ((current?.counter ?? 0)) + 1,
+          timestamp: Date.now(),
+        }));
+        addMessage("📝 Document counter incremented", "system");
+      } catch (error) {
+        addMessage(`❌ Error: ${error.message}`, "error");
+      }
+    });
+    
+    // Set doc status
+    setDocBtn.addEventListener("click", async () => {
+      try {
+        await client.setObject(currentPath, {
+          status: "active",
+          timestamp: Date.now(),
+          message: "Set from browser",
+        });
+        addMessage("📝 Document status set", "system");
+      } catch (error) {
+        addMessage(`❌ Error: ${error.message}`, "error");
+      }
+    });
+    
+    // Delete doc
+    deleteDocBtn.addEventListener("click", async () => {
+      try {
+        await client.removeObject(currentPath);
+        addMessage("🗑️ Document deleted", "system");
+        updateDocDisplay(null);
+      } catch (error) {
+        addMessage(`❌ Error: ${error.message}`, "error");
+      }
+    });
+
+    applyConfigBtn.addEventListener("click", () => {
+      const nextNamespace = namespaceInput.value.trim() || DEFAULT_NAMESPACE;
+      const nextPath = pathInput.value.trim() || DEFAULT_PATH;
+
+      currentNamespace = nextNamespace;
+      currentPath = nextPath;
+      syncUrl(currentNamespace, currentPath);
+      reconnect();
+    });
+    
+    const initialConfig = getConfigFromUrl();
+    currentNamespace = initialConfig.namespace;
+    currentPath = initialConfig.path;
+    namespaceInput.value = currentNamespace;
+    pathInput.value = currentPath;
+    syncUrl(currentNamespace, currentPath);
+
+    // Initial message
+    addMessage("🚀 Browser test ready. Messages are shown only when received from the stream.", "system");
+    reconnect();
+    
+    // Cleanup on page unload
+    window.addEventListener("beforeunload", () => {
+      stopListening();
+      stopWatching();
+    });
+  </script>
+</body>
+</html>
