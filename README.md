@@ -4,9 +4,23 @@
 
 Live demo: [https://streambin.xyz/demo](https://streambin.xyz/demo)
 
-Streambin is a privacy-first platform for real-time communication between AI agents, applications, and humans. All data is encrypted client-side before reaching the server—the backend stores only opaque ciphertext in Upstash Redis with automatic 3-day expiration.
+Streambin is a public relay for short-lived data, plus SDKs that make it private by default.
 
-🔐 **Zero-knowledge architecture** — Server never sees plaintext  
+Mental model:
+
+1. **Public server (Next.js on `streambin.xyz` — feel free to self-host)**
+  - Anyone can read/write **public streams**
+  - Anyone can read/write **public JSON documents**
+  - All stored data expires automatically after 3 days
+2. **Client tools (`@streambin/sdk` + `@streambin/react-sdk`)**
+  - Encrypt data client-side before sending to `streambin.xyz`
+  - Decrypt data client-side after reading from `streambin.xyz`
+  - Use the public server as a transport layer to exchange encrypted data with anyone who has the same passphrase and can reach `streambin.xyz`
+
+In practice, the server handles storage and delivery, while privacy is enforced at the client layer.
+
+🔐 **Zero-knowledge architecture** — Server never sees plaintext (unless you deliberately send it non-encrypted payloads)  
+🕒 **Privacy-first retention** — Payloads automatically expire after 3 days  
 ⚡ **Real-time SSE streams** — Resilient reconnection with automatic recovery  
 🔄 **Firebase-style reactive docs** — Set/update/listen to objects with dot-path merges  
 🤖 **Agent-first CLI** — Local bucket management for AI workflows  
@@ -17,21 +31,32 @@ Streambin is a privacy-first platform for real-time communication between AI age
 ## Features
 
 ### Streams
-- **Append-only encrypted message streams** with configurable namespaces
+
+- **Append-only message streams** with configurable namespaces (typically encrypted via SDK/CLI)
 - **Server-Sent Events (SSE)** for real-time listening with automatic reconnection
 - **Cursor-based pagination** for historical message retrieval
 - **Automatic expiration** after 3 days
 
 ### Documents
-- **Encrypted key-value objects** with Firebase-style reactivity
+
+- **Key-value documents** with Firebase-style reactivity (typically encrypted via SDK/CLI)
 - **Dot-path updates** for partial object merges (e.g., `{ "user.profile.photo.url": "..." }`)
 - **Real-time listeners** that react to changes across clients
 - **Automatic expiration** after 3 days
 
+### Files
+
+- **Public file uploads** with deterministic names (`sha256(namespace + "/" + path)`)
+- **Simple upload API** with optional S3 multipart support for large files
+- **Stable read URLs** through `/api/files/:namespace/[...path]`
+- **Automatic expiration** after 3 days via S3 lifecycle rules
+
 ### Security
+
 - **Client-side encryption** using Web Crypto API (PBKDF2 + AES-GCM)
 - **Passphrase-derived keys** with salt and authenticated encryption
-- **Zero-knowledge server** stores only base64url ciphertext
+- **Zero-knowledge server** stores opaque encrypted envelopes (or plaintext if you send plaintext)
+- **Privacy-first retention** with automatic 3-day payload expiration
 - **Versioned ciphertext envelope** for future crypto upgrades
 
 ---
@@ -95,6 +120,16 @@ await client.updateObject("agents/status", {
 
 // Delete a doc
 await client.removeObject("agents/status");
+
+// Upload a public file (auto-expires after 3 days)
+const uploaded = await client.uploadFile("assets/logo.png", fileOrBuffer);
+console.log(uploaded.publicUrl);
+
+// Resolve the stable Streambin URL (redirects to the public S3 URL)
+const stableUrl = client.getFileUrl("assets/logo.png");
+
+// Remove the file (metadata + S3 object)
+await client.deleteFile("assets/logo.png");
 ```
 
 ### Browser (ESM CDN)
@@ -111,7 +146,7 @@ await client.removeObject("agents/status");
   <button id="send">Send Message</button>
   
   <script type="module">
-    import { StreambinClient } from "https://esm.sh/@streambin/sdk@0.1.0";
+    import { StreambinClient } from "https://esm.sh/@streambin/sdk@0.1.2";
     
     const client = new StreambinClient({
       baseUrl: "https://streambin.xyz",
@@ -138,7 +173,13 @@ await client.removeObject("agents/status");
 ### React Hooks
 
 ```typescript
-import { useStream, useSendToStream, useObject, useObjectActions } from "@streambin/react-sdk";
+import {
+  useStream,
+  useSendToStream,
+  useObject,
+  useObjectActions,
+  useFileUpload,
+} from "@streambin/react-sdk";
 
 function MyComponent() {
   const bucket = {
@@ -149,19 +190,42 @@ function MyComponent() {
 
   // Send messages to a stream
   const { sendMessage } = useSendToStream(bucket, "agents/run-log");
-  await sendMessage("hello from react");
+  const onSend = () => {
+    void sendMessage("hello from react");
+  };
 
   // Listen to a stream
-  const { messages, isConnected } = useStream(bucket, "agents/run-log");
+  const { messages, connected } = useStream(bucket, "agents/run-log");
 
   // Watch an object
-  const doc = useObject(bucket, "agents/status");
+  const { value: doc, loading } = useObject(bucket, "agents/status");
 
   // Update an object
   const { set, update, remove } = useObjectActions(bucket, "agents/status");
-  await update({ "step": "completed" });
+  const onMarkDone = () => {
+    void update((current) => ({
+      ...(current ?? {}),
+      step: "completed",
+    }));
+  };
 
-  return <div>{isConnected ? "Live" : "Reconnecting..."}</div>;
+  // Upload a public file
+  const { uploadFile, getFileUrl, uploading } =
+    useFileUpload(bucket, "assets/logo.png");
+  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) await uploadFile(file);
+  };
+
+  return (
+    <div>
+      <button onClick={onSend}>Send</button>
+      <button onClick={onMarkDone}>Mark done</button>
+      <div>{connected ? "Live" : "Reconnecting..."}</div>
+      <div>{loading ? "Loading doc..." : JSON.stringify(doc)}</div>
+      <div>Messages: {messages.length}</div>
+    </div>
+  );
 }
 ```
 
@@ -203,154 +267,143 @@ npx streambin.xyz update-object agents/status '{"progress.percent":75}'
 
 # Delete a doc
 npx streambin.xyz remove-object agents/status
+
+# Upload a public file (auto-expires after 3 days)
+npx streambin.xyz upload-file assets/logo.png ./logo.png
+
+# Print the stable Streambin URL for the file
+npx streambin.xyz file-url assets/logo.png
+
+# Download the file
+npx streambin.xyz download-file assets/logo.png ./logo.png
+
+# Remove the file
+npx streambin.xyz remove-file assets/logo.png
 ```
 
-### CURL (with encryption helpers)
+### CURL (relay API)
 
 ```bash
-# Setup helpers (save to ~/.streambin-helpers.sh)
 BASE_URL="https://streambin.xyz"
-PASSPHRASE="my-secret-passphrase"
 
-encrypt_payload() {
-  local input="$1"
-  if echo "$input" | jq empty 2>/dev/null; then
-    echo "$input" | openssl enc -aes-256-cbc -pbkdf2 -pass pass:"$PASSPHRASE" -base64 -A
-  else
-    echo "{\"t\":\"m\",\"d\":\"$input\"}" | openssl enc -aes-256-cbc -pbkdf2 -pass pass:"$PASSPHRASE" -base64 -A
-  fi
-}
-
-decrypt_payload() {
-  echo "$1" | openssl enc -d -aes-256-cbc -pbkdf2 -pass pass:"$PASSPHRASE" -base64 -A
-}
-
-# Post to a stream
-encrypt_payload 'Hello from curl' | curl -sS -X POST \
+# Post to a stream (plaintext relay)
+curl -sS -X POST \
   "$BASE_URL/api/streams/frozen-castor/agents/run-log" \
-  --data-binary @-
+  -H "Content-Type: text/plain" \
+  --data-binary "Hello from curl"
 
 # Listen to a stream (SSE)
 curl -N -sS "$BASE_URL/api/streams/frozen-castor/agents/run-log?transport=sse" \
-  | while IFS= read -r line; do
-      if [[ "$line" =~ ^data:\ (.*)$ ]]; then
-        echo "${BASH_REMATCH[1]}" | jq -r '.string' | while IFS= read -r ct; do
-          decrypt_payload "$ct"
-        done
-      fi
-    done
+  | sed -n 's/^data: //p'
 
 # Get last messages
 curl -sS "$BASE_URL/api/streams/frozen-castor/agents/run-log?after=1715000000000&limit=10" \
-  | jq -r '.events[].string' \
-  | while IFS= read -r ct; do decrypt_payload "$ct"; printf '\n'; done
+  | jq .
 
-# Save a doc
-encrypt_payload '{"step":"running"}' | curl -sS -X POST \
+# Save a doc (JSON relay)
+curl -sS -X POST \
   "$BASE_URL/api/docs/frozen-castor/agents/status" \
-  --data-binary @-
+  -H "Content-Type: application/json" \
+  -d '{"step":"running"}'
+
+# Get a doc
+curl -sS "$BASE_URL/api/docs/frozen-castor/agents/status" | jq .
 
 # Delete a doc
 curl -sS -X DELETE "$BASE_URL/api/docs/frozen-castor/agents/status"
+
+# Upload a public file (two-step: prepare + PUT + completeSingle)
+PREPARED=$(curl -sS -X POST \
+  "$BASE_URL/api/files/frozen-castor/assets/logo.png" \
+  -H "Content-Type: application/json" \
+  -d "{\"action\":\"prepare\",\"size\":$(stat -f%z ./logo.png),\"contentType\":\"image/png\"}")
+
+UPLOAD_URL=$(echo "$PREPARED" | jq -r .url)
+FILE_ID=$(echo "$PREPARED" | jq -r .fileId)
+KEY=$(echo "$PREPARED" | jq -r .key)
+
+curl -sS -X PUT "$UPLOAD_URL" -H "Content-Type: image/png" --data-binary @./logo.png
+
+curl -sS -X POST \
+  "$BASE_URL/api/files/frozen-castor/assets/logo.png" \
+  -H "Content-Type: application/json" \
+  -d "{\"action\":\"completeSingle\",\"fileId\":\"$FILE_ID\",\"key\":\"$KEY\",\"contentType\":\"image/png\",\"size\":$(stat -f%z ./logo.png)}"
+
+# Read the file (302 redirect to its public S3 URL)
+curl -sSL "$BASE_URL/api/files/frozen-castor/assets/logo.png" -o ./logo.png
+
+# Delete the file
+curl -sS -X DELETE "$BASE_URL/api/files/frozen-castor/assets/logo.png"
 ```
 
 ### Python
 
 ```python
 import requests
-import json
-from base64 import b64encode, b64decode
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-import os
+BASE_URL = "https://streambin.xyz"
+NAMESPACE = "frozen-castor"
 
-# Encryption helpers
-def derive_key(passphrase: str, salt: bytes) -> bytes:
-    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100000)
-    return kdf.derive(passphrase.encode())
+# Post to stream (plaintext relay)
+requests.post(
+    f"{BASE_URL}/api/streams/{NAMESPACE}/agents/run-log",
+    data="hello from python",
+    headers={"Content-Type": "text/plain"},
+)
 
-def encrypt(passphrase: str, data: dict | str) -> str:
-    payload = data if isinstance(data, str) else json.dumps(data)
-    salt = os.urandom(16)
-    key = derive_key(passphrase, salt)
-    iv = os.urandom(12)
-    cipher = Cipher(algorithms.AES(key), modes.GCM(iv))
-    encryptor = cipher.encryptor()
-    ciphertext = encryptor.update(payload.encode()) + encryptor.finalize()
-    return b64encode(salt + iv + encryptor.tag + ciphertext).decode()
+# Get stream events
+events = requests.get(
+    f"{BASE_URL}/api/streams/{NAMESPACE}/agents/run-log",
+    params={"after": 0, "limit": 10},
+).json()
+print(events)
 
-# Bucket config
-bucket_config = {
-    "base_url": "https://streambin.xyz",
-    "namespace": "frozen-castor",
-    "passphrase": "my-secret-passphrase"
-}
+# Save JSON doc
+requests.post(
+    f"{BASE_URL}/api/docs/{NAMESPACE}/agents/status",
+    json={"step": "running"},
+)
 
-# Post to stream
-def post_stream(bucket, path, message):
-    encrypted = encrypt(bucket["passphrase"], {"t": "m", "d": message})
-    url = f"{bucket['base_url']}/api/streams/{bucket['namespace']}/{path}"
-    requests.post(url, data=encrypted)
-
-# Save doc
-def save_doc(bucket, path, obj):
-    encrypted = encrypt(bucket["passphrase"], obj)
-    url = f"{bucket['base_url']}/api/docs/{bucket['namespace']}/{path}"
-    requests.post(url, data=encrypted)
-
-# Usage
-post_stream(bucket_config, "agents/run-log", "hello from python")
-save_doc(bucket_config, "agents/status", {"step": "running"})
-```
-
-### Plain HTTP (unencrypted)
-
-```bash
-# Post to stream (plaintext)
-curl -X POST "https://streambin.xyz/api/streams/my-namespace/agents/log" \
-  -d "Hello unencrypted"
-
-# Listen to stream (SSE)
-curl -N "https://streambin.xyz/api/streams/my-namespace/agents/log?transport=sse"
-
-# Get last messages
-curl "https://streambin.xyz/api/streams/my-namespace/agents/log?after=1715000000000&limit=10"
-
-# Save doc (JSON)
-curl -X POST "https://streambin.xyz/api/docs/my-namespace/agents/status" \
-  -H "Content-Type: application/json" \
-  -d '{"step":"running"}'
-
-# Get doc
-curl "https://streambin.xyz/api/docs/my-namespace/agents/status"
+# Get JSON doc
+doc = requests.get(f"{BASE_URL}/api/docs/{NAMESPACE}/agents/status").json()
+print(doc)
 
 # Delete doc
-curl -X DELETE "https://streambin.xyz/api/docs/my-namespace/agents/status"
+requests.delete(f"{BASE_URL}/api/docs/{NAMESPACE}/agents/status")
 ```
+
+> For end-to-end encrypted usage, prefer `@streambin/sdk` / `@streambin/react-sdk` / `streambin.xyz` CLI so payload encoding/decoding matches the current cipher envelope format.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────┐      encrypted      ┌──────────────┐      ciphertext      ┌─────────────┐
+┌─────────────┐      encrypted      ┌──────────────┐      payloads        ┌─────────────┐
 │   Client    │────────streams───────│  Next.js API │──────(opaque)────────│   Upstash   │
 │  (browser,  │                      │  (Vercel)    │                      │   Redis     │
 │   CLI, etc) │◄─────SSE/JSON────────│              │◄────3-day TTL────────│             │
+│             │                      │              │                      └─────────────┘
+│             │      presigned       │              │      file bytes      ┌─────────────┐
+│             │──────uploads─────────│              │──────(public)────────│  AWS S3     │
+│             │◄─────redirect────────│              │◄──3-day lifecycle────│  streambin  │
 └─────────────┘                      └──────────────┘                      └─────────────┘
 ```
 
-- **Client**: Derives AES-GCM keys from passphrase (PBKDF2), encrypts all data
-- **Server**: Stores base64url ciphertext in Redis with 3-day expiration
-- **Redis**: Streams use `RPUSH`/`LRANGE`, docs use `SET`/`GET`/`DEL`
+- **Client**: Derives AES-GCM keys from passphrase (PBKDF2), encrypts streams/docs locally
+- **Server**: Stores opaque ciphertext in Redis (3-day TTL); issues presigned S3 URLs for file uploads
+- **Redis**: Streams use `RPUSH`/`LRANGE`, docs use `SET`/`GET`/`DEL`, file metadata uses `SET`/`GET`
+- **S3**: Files keyed by `sha256(namespace + "/" + path)`, public-read on `files/*`, lifecycle expires after 3 days
+
+### Flow in one sentence
+
+Clients encrypt locally -> send payloads to `streambin.xyz` -> other clients fetch payloads -> decrypt locally with the same passphrase.
 
 ---
 
 ## Monorepo Structure
 
 ```
-streambox/
+streambin/
 ├── apps/
 │   └── server/          # Next.js API (Vercel)
 ├── packages/
@@ -387,12 +440,49 @@ pnpm dev
 
 ### Environment Variables
 
-Create `apps/server/.env.local`:
+Create `apps/server/.env`:
 
 ```env
 UPSTASH_REDIS_REST_URL=https://your-redis.upstash.io
 UPSTASH_REDIS_REST_TOKEN=your-token
+
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret
+S3_BUCKET_NAME=streambin
+# Optional override for public URL generation:
+S3_PUBLIC_BASE_URL=
 ```
+
+### S3 Bucket Bootstrap (local AWS CLI)
+
+Run these from `apps/server`:
+
+```bash
+# Create bucket (us-east-1 does not use CreateBucketConfiguration)
+aws s3api create-bucket --bucket streambin --region us-east-1
+
+# For non-us-east-1:
+# aws s3api create-bucket --bucket streambin --region eu-west-1 \
+#   --create-bucket-configuration LocationConstraint=eu-west-1
+
+# Allow browser uploads
+aws s3api put-bucket-cors \
+  --bucket streambin \
+  --cors-configuration file://s3/cors.json
+
+# Auto-delete files after 3 days (no cron required)
+aws s3api put-bucket-lifecycle-configuration \
+  --bucket streambin \
+  --lifecycle-configuration file://s3/lifecycle.json
+
+# Public reads for files/*
+aws s3api put-bucket-policy \
+  --bucket streambin \
+  --policy file://s3/public-read-policy.json
+```
+
+If the bucket already exists, skip `create-bucket` and rerun the other commands to make setup idempotent.
 
 ---
 
@@ -401,24 +491,39 @@ UPSTASH_REDIS_REST_TOKEN=your-token
 ### Streams
 
 **POST** `/api/streams/:namespace/[...path]`  
-Append encrypted message to stream. Body: raw ciphertext (base64url).
+Append payload string to a stream. Body: raw text (`Content-Type: text/plain`).
 
 **GET** `/api/streams/:namespace/[...path]?after=<timestamp>&limit=<max100>`  
-Retrieve messages as JSON array.
+Retrieve events as `{ events: StreamEventEnvelope[] }`.
 
 **GET** `/api/streams/:namespace/[...path]?transport=sse&after=<timestamp>`  
-Subscribe to stream via Server-Sent Events. Auto-reconnects after 790s.
+Subscribe to stream via Server-Sent Events (`Accept: text/event-stream` also works). Server rotates connection around 790s.
 
 ### Documents
 
 **POST** `/api/docs/:namespace/[...path]`  
-Save encrypted object. Body: raw ciphertext (base64url).
+Save document value. Body: JSON (`Content-Type: application/json`).
 
 **GET** `/api/docs/:namespace/[...path]`  
-Retrieve encrypted object.
+Retrieve document envelope `{ value, updatedAt }` (404 returns `{ value: null }`).
 
 **DELETE** `/api/docs/:namespace/[...path]`  
 Delete document.
+
+### Files
+
+**POST** `/api/files/:namespace/[...path]`  
+Prepare or complete uploads. Body is JSON with `action`:
+
+- `prepare`: returns either a single PUT presigned URL or multipart upload part URLs
+- `completeSingle`: stores metadata after successful single-part upload
+- `completeMultipart`: completes multipart upload and stores metadata
+
+**GET** `/api/files/:namespace/[...path]`  
+Redirect to the public S3 URL for the uploaded file (404 if missing).
+
+**DELETE** `/api/files/:namespace/[...path]`  
+Delete file metadata and best-effort delete the S3 object.
 
 ---
 

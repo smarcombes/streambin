@@ -1,0 +1,14 @@
+{
+  "Rules": [
+    {
+      "ID": "streambin-3-day-expiration",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "files/"
+      },
+      "Expiration": {
+        "Days": 3
+      }
+    }
+  ]
+}

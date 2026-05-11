@@ -1,5 +1,8 @@
+import { createHash } from "node:crypto";
+
 export const STREAM_TTL_SECONDS = 60 * 60 * 24 * 3;
 export const DOC_TTL_SECONDS = 60 * 60 * 24 * 3;
+export const FILE_TTL_SECONDS = DOC_TTL_SECONDS;
 export const SSE_MAX_DURATION_SECONDS = 800;
 export const SSE_RECONNECT_AT_SECONDS = 790;
 export const SSE_PING_INTERVAL_MS = 20_000;
@@ -16,6 +19,17 @@ export type StoredDocEnvelope = {
   updatedAt: number;
 };
 
+export type StoredFileEnvelope = {
+  fileId: string;
+  key: string;
+  publicUrl: string;
+  contentType: string;
+  originalContentType: string;
+  encrypted: boolean;
+  size: number;
+  updatedAt: number;
+};
+
 export function normalizePath(path: string | string[]): string {
   const parts = Array.isArray(path) ? path : path.split("/");
   return parts.map((part) => part.trim()).filter(Boolean).join("/");
@@ -27,6 +41,18 @@ export function streamKey(namespace: string, path: string | string[]): string {
 
 export function docKey(namespace: string, path: string | string[]): string {
   return `sb:doc:${namespace}:${normalizePath(path)}`;
+}
+
+export function fileLookupKey(namespace: string, path: string | string[]): string {
+  return `sb:file:${namespace}:${normalizePath(path)}`;
+}
+
+export function fileHashInput(namespace: string, path: string | string[]): string {
+  return `${namespace}/${normalizePath(path)}`;
+}
+
+export function fileIdFromNamespacePath(namespace: string, path: string | string[]): string {
+  return createHash("sha256").update(fileHashInput(namespace, path)).digest("hex");
 }
 
 export function fnv1aHash(input: string): string {

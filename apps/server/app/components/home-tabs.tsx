@@ -101,6 +101,65 @@ const client = new StreambinClient(bucketConfig);`,
         language: "typescript",
         render: ({ path }) => `await client.removeObject("${path}");`,
       },
+      {
+        id: "upload-file",
+        title: "Upload a file (encrypted by default, public URL, 3-day TTL)",
+        language: "typescript",
+        render: ({ path }) => `import { readFile } from "node:fs/promises";
+
+const bytes = await readFile("./logo.png");
+const uploaded = await client.uploadFile("${path}", new Uint8Array(bytes), {
+  contentType: "image/png",
+});
+
+// uploaded.publicUrl serves AES-GCM ciphertext (SBF1/SBF2 envelope)
+// uploaded.encrypted === true, uploaded.originalContentType === "image/png"
+console.log(uploaded.publicUrl);`,
+      },
+      {
+        id: "download-file",
+        title: "Download a file (auto-decrypts with the bucket passphrase)",
+        language: "typescript",
+        render: ({ path }) => `import { writeFile } from "node:fs/promises";
+
+const downloaded = await client.downloadFile("${path}");
+if (downloaded) {
+  await writeFile("./logo.png", downloaded.bytes);
+  console.log(downloaded.contentType, downloaded.metadata.size);
+}`,
+      },
+      {
+        id: "stream-large-file",
+        title: "Stream a large file (bounded memory, chunked SBF2)",
+        language: "typescript",
+        render: ({ path }) => `import { createReadStream, createWriteStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+
+const stats = await stat("./video.mp4");
+
+// Upload: SDK reads the source 8 MiB at a time, encrypts each chunk,
+// and uploads it as one S3 multipart part. Peak RAM stays ~16 MiB.
+await client.uploadFile("${path}", {
+  size: stats.size,
+  contentType: "video/mp4",
+  stream: () => Readable.toWeb(createReadStream("./video.mp4")) as ReadableStream<Uint8Array>,
+});
+
+// Download: stream decrypted bytes straight to disk.
+const downloaded = await client.downloadFileStream("${path}");
+if (downloaded) {
+  const nodeStream = Readable.fromWeb(downloaded.stream as any);
+  await pipeline(nodeStream, createWriteStream("./video.mp4"));
+}`,
+      },
+      {
+        id: "delete-file",
+        title: "Delete a file",
+        language: "typescript",
+        render: ({ path }) => `await client.deleteFile("${path}");`,
+      },
     ],
   },
   browser: {
@@ -198,6 +257,40 @@ await client.updateObject("${path}", (current) => ({
 await client.removeObject("${path}");`,
       },
       {
+        id: "upload-file",
+        title: "Upload a file from <input type=\"file\"> (encrypted by default)",
+        language: "typescript",
+        render: ({ path }) => `// After importing StreambinClient
+const input = document.getElementById("picker");
+input.addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const uploaded = await client.uploadFile("${path}", file, {
+    contentType: file.type,
+  });
+  console.log("ciphertext on S3:", uploaded.publicUrl);
+});`,
+      },
+      {
+        id: "download-file-blob",
+        title: "Download & render encrypted file via blob: URL",
+        language: "typescript",
+        render: ({ path }) => `// After importing StreambinClient
+// getDecryptedBlobUrl fetches ciphertext, decrypts in the browser,
+// and returns a blob: URL safe to drop into <img>, <video>, <a download>.
+const blobUrl = await client.getDecryptedBlobUrl("${path}");
+if (blobUrl) {
+  document.getElementById("preview").src = blobUrl;
+}`,
+      },
+      {
+        id: "delete-file",
+        title: "Delete a file",
+        language: "typescript",
+        render: ({ path }) => `// After importing StreambinClient
+await client.deleteFile("${path}");`,
+      },
+      {
         id: "full-example",
         title: "Complete HTML example",
         language: "typescript",
@@ -288,6 +381,56 @@ await set({ step: "running" });
 await update((current) => ({ ...(current ?? {}), attempts: ((current?.attempts as number | undefined) ?? 0) + 1 }));
 await remove();`,
       },
+      {
+        id: "upload-file",
+        title: "Upload a file (encrypted by default)",
+        language: "typescript",
+        render: ({ path }) => `import { useFileUpload } from "@streambin/react-sdk";
+
+function FilePicker() {
+  const { uploadFile, uploading, error } = useFileUpload(bucket, "${path}");
+  return (
+    <input
+      type="file"
+      disabled={uploading}
+      onChange={(event) => {
+        const file = event.target.files?.[0];
+        if (file) {
+          void uploadFile(file, { contentType: file.type });
+        }
+      }}
+    />
+  );
+}`,
+      },
+      {
+        id: "download-file",
+        title: "Download + render file (decrypted blob URL)",
+        language: "typescript",
+        render: ({ path }) => `import { useFileDownload } from "@streambin/react-sdk";
+
+function FilePreview() {
+  const { blobUrl, contentType, encrypted, loading, error, refetch } =
+    useFileDownload(bucket, "${path}");
+
+  if (loading) return <p>Decrypting…</p>;
+  if (error) return <p>Error: {error.message}</p>;
+  if (!blobUrl) return <p>No file at "${path}" yet.</p>;
+  return contentType?.startsWith("image/")
+    ? <img src={blobUrl} alt="" />
+    : <a href={blobUrl} download>Download ({contentType})</a>;
+}`,
+      },
+      {
+        id: "delete-file",
+        title: "Delete a file + helpers",
+        language: "typescript",
+        render: ({ path }) => `import { useFileUpload } from "@streambin/react-sdk";
+
+const { removeFile, getFileUrl } = useFileUpload(bucket, "${path}");
+const url = getFileUrl(); // stable streambin.xyz URL (serves ciphertext)
+await removeFile();`,
+      },
     ],
   },
   cli: {
@@ -357,6 +500,35 @@ npx streambin.xyz create --name frozen-castor --namespace my-namespace --passphr
         title: "Delete a doc",
         language: "bash",
         render: ({ path }) => `npx streambin.xyz remove-object ${path}`,
+      },
+      {
+        id: "upload-file",
+        title: "Upload a file (encrypted by default, streamed for large files)",
+        language: "bash",
+        render: ({ path }) => `npx streambin.xyz upload-file ${path} ./logo.png
+# Plaintext (rare; ciphertext is on by default)
+npx streambin.xyz upload-file ${path} ./logo.png --no-encrypt
+# Tune the chunk size for large files (default 8 MiB)
+npx streambin.xyz upload-file ${path} ./video.mp4 --chunk-size 16777216`,
+      },
+      {
+        id: "download-file",
+        title: "Download a file (auto-decrypts using bucket passphrase)",
+        language: "bash",
+        render: ({ path }) => `npx streambin.xyz download-file ${path} ./downloaded.png`,
+      },
+      {
+        id: "file-url",
+        title: "Print the stable Streambin URL for a file",
+        language: "bash",
+        render: ({ path }) => `npx streambin.xyz file-url ${path}
+# Encrypted files serve ciphertext at this URL; use download-file to decrypt`,
+      },
+      {
+        id: "remove-file",
+        title: "Delete a file (metadata + S3 object)",
+        language: "bash",
+        render: ({ path }) => `npx streambin.xyz remove-file ${path}`,
       },
     ],
   },
@@ -464,6 +636,53 @@ decrypt_events_json() {
         language: "bash",
         render: ({ namespace, path }) => `curl -sS -X DELETE "$BASE_URL/api/docs/${namespace}/${path}"`,
       },
+      {
+        id: "file-metadata",
+        title: "Get file metadata (encrypted flag, originalContentType, size, publicUrl)",
+        language: "bash",
+        render: ({ namespace, path }) =>
+          `curl -sS "$BASE_URL/api/files/${namespace}/${path}?meta=1" | jq`,
+      },
+      {
+        id: "file-download",
+        title: "Download a file (redirects to S3; ciphertext for encrypted files)",
+        language: "bash",
+        render: ({ namespace, path }) =>
+          `# -L follows the 302 to the S3 publicUrl.
+# For encrypted files the body is the SBF1/SBF2 envelope; use the SDK or CLI to decrypt.
+curl -sSL "$BASE_URL/api/files/${namespace}/${path}" -o ./downloaded.bin`,
+      },
+      {
+        id: "upload-file-plaintext",
+        title: "Upload a file (plaintext; encrypted flow requires the SDK)",
+        language: "bash",
+        render: ({ namespace, path }) =>
+          `FILE=./logo.png
+TYPE=image/png
+SIZE=$(wc -c < "$FILE" | tr -d ' ')
+
+# 1) prepare: server returns a single-PUT presigned URL
+PREPARE=$(curl -sS -X POST "$BASE_URL/api/files/${namespace}/${path}" \\
+  -H "content-type: application/json" \\
+  -d "{\\"action\\":\\"prepare\\",\\"contentType\\":\\"$TYPE\\",\\"originalContentType\\":\\"$TYPE\\",\\"encrypted\\":false,\\"size\\":$SIZE}")
+PUT_URL=$(printf '%s' "$PREPARE" | jq -r .url)
+FILE_ID=$(printf '%s' "$PREPARE" | jq -r .fileId)
+KEY=$(printf '%s' "$PREPARE" | jq -r .key)
+
+# 2) upload bytes directly to S3
+curl -sS -X PUT "$PUT_URL" -H "content-type: $TYPE" --data-binary @"$FILE"
+
+# 3) complete: server records metadata in Redis
+curl -sS -X POST "$BASE_URL/api/files/${namespace}/${path}" \\
+  -H "content-type: application/json" \\
+  -d "{\\"action\\":\\"completeSingle\\",\\"fileId\\":\\"$FILE_ID\\",\\"key\\":\\"$KEY\\",\\"contentType\\":\\"$TYPE\\",\\"originalContentType\\":\\"$TYPE\\",\\"encrypted\\":false,\\"size\\":$SIZE}" | jq`,
+      },
+      {
+        id: "delete-file",
+        title: "Delete a file",
+        language: "bash",
+        render: ({ namespace, path }) => `curl -sS -X DELETE "$BASE_URL/api/files/${namespace}/${path}"`,
+      },
     ],
   },
   http: {
@@ -519,6 +738,65 @@ Content-Type: application/json
         title: "Delete doc",
         language: "http",
         render: ({ namespace, path }) => `DELETE /api/docs/${namespace}/${path}`,
+      },
+      {
+        id: "file-metadata",
+        title: "File metadata (encrypted flag, originalContentType, publicUrl)",
+        language: "http",
+        render: ({ namespace, path }) => `GET /api/files/${namespace}/${path}?meta=1`,
+      },
+      {
+        id: "file-download",
+        title: "Download a file (302 to S3 publicUrl; ciphertext when encrypted)",
+        language: "http",
+        render: ({ namespace, path }) => `GET /api/files/${namespace}/${path}`,
+      },
+      {
+        id: "upload-file-prepare",
+        title: "Upload step 1/3 — prepare presigned URL",
+        language: "http",
+        render: ({ namespace, path }) => `POST /api/files/${namespace}/${path}
+Content-Type: application/json
+
+{
+  "action": "prepare",
+  "contentType": "image/png",
+  "originalContentType": "image/png",
+  "encrypted": false,
+  "size": 12345
+}`,
+      },
+      {
+        id: "upload-file-put",
+        title: "Upload step 2/3 — PUT bytes directly to S3",
+        language: "http",
+        render: () => `PUT <presigned url from step 1>
+Content-Type: image/png
+
+<file bytes>`,
+      },
+      {
+        id: "upload-file-complete",
+        title: "Upload step 3/3 — register metadata in Redis",
+        language: "http",
+        render: ({ namespace, path }) => `POST /api/files/${namespace}/${path}
+Content-Type: application/json
+
+{
+  "action": "completeSingle",
+  "fileId": "<fileId from prepare>",
+  "key": "<key from prepare>",
+  "contentType": "image/png",
+  "originalContentType": "image/png",
+  "encrypted": false,
+  "size": 12345
+}`,
+      },
+      {
+        id: "delete-file",
+        title: "Delete a file",
+        language: "http",
+        render: ({ namespace, path }) => `DELETE /api/files/${namespace}/${path}`,
       },
     ],
   },
@@ -664,6 +942,77 @@ save_doc(bucket_config, "${path}", current)`,
         title: "Delete a doc",
         language: "python",
         render: ({ path }) => `save_doc(bucket_config, "${path}", {"__streambin_deleted": True})`,
+      },
+      {
+        id: "file-metadata",
+        title: "Get file metadata",
+        language: "python",
+        render: ({ path }) => `def get_file_metadata(bucket: dict, path: str):
+  response = requests.get(
+    f"{bucket['base_url']}/api/files/{bucket['namespace']}/{path}",
+    params={"meta": "1"},
+  )
+  if response.status_code == 404:
+    return None
+  return response.json()
+
+print(get_file_metadata(bucket_config, "${path}"))`,
+      },
+      {
+        id: "upload-file",
+        title: "Upload a plaintext file (encrypted flow requires the JS SDK)",
+        language: "python",
+        render: ({ path }) => `def upload_file_plaintext(bucket: dict, path: str, local_path: str, content_type: str):
+  with open(local_path, "rb") as fh:
+    data = fh.read()
+  prepare = requests.post(
+    f"{bucket['base_url']}/api/files/{bucket['namespace']}/{path}",
+    json={
+      "action": "prepare",
+      "contentType": content_type,
+      "originalContentType": content_type,
+      "encrypted": False,
+      "size": len(data),
+    },
+  ).json()
+  requests.put(prepare["url"], data=data, headers={"content-type": content_type})
+  return requests.post(
+    f"{bucket['base_url']}/api/files/{bucket['namespace']}/{path}",
+    json={
+      "action": "completeSingle",
+      "fileId": prepare["fileId"],
+      "key": prepare["key"],
+      "contentType": content_type,
+      "originalContentType": content_type,
+      "encrypted": False,
+      "size": len(data),
+    },
+  ).json()
+
+upload_file_plaintext(bucket_config, "${path}", "./logo.png", "image/png")`,
+      },
+      {
+        id: "download-file",
+        title: "Download a file (plaintext; encrypted requires JS SDK)",
+        language: "python",
+        render: ({ path }) => `def download_file(bucket: dict, path: str, dest: str):
+  meta = get_file_metadata(bucket, path)
+  if not meta:
+    return None
+  body = requests.get(meta["publicUrl"]).content
+  with open(dest, "wb") as fh:
+    fh.write(body)
+  return meta
+
+download_file(bucket_config, "${path}", "./downloaded.png")`,
+      },
+      {
+        id: "delete-file",
+        title: "Delete a file",
+        language: "python",
+        render: ({ path }) => `requests.delete(
+  f"{bucket_config['base_url']}/api/files/{bucket_config['namespace']}/${path}",
+)`,
       },
     ],
   },

@@ -2,32 +2,39 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useSendToStream, useStream } from "@streambin/react-sdk";
+import { FileTester } from "../components/file-tester";
 
 const DEFAULT_NAMESPACE = "test-namespace";
 const DEFAULT_PATH = "test/stream";
+const DEFAULT_FILE_PATH = "test/upload.bin";
 const DEFAULT_PASSPHRASE = "demo-passphrase";
 
 function nowLabel(ts: number): string {
   return new Date(ts).toLocaleTimeString();
 }
 
+const PROD_BASE_URL = "https://streambin.xyz";
+
 export default function DemoPage() {
   const [namespace, setNamespace] = useState(DEFAULT_NAMESPACE);
   const [path, setPath] = useState(DEFAULT_PATH);
+  const [filePath, setFilePath] = useState(DEFAULT_FILE_PATH);
   const [passphrase, setPassphrase] = useState(DEFAULT_PASSPHRASE);
+  const [baseUrl, setBaseUrl] = useState(PROD_BASE_URL);
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState("Idle");
   const [sending, setSending] = useState(false);
   const bucket = useMemo(
     () => ({
-      baseUrl: "https://streambin.xyz",
+      baseUrl,
       namespace: namespace.trim() || DEFAULT_NAMESPACE,
       passphrase: passphrase.trim() || DEFAULT_PASSPHRASE,
     }),
-    [namespace, passphrase],
+    [baseUrl, namespace, passphrase],
   );
 
   const streamPath = path.trim() || DEFAULT_PATH;
+  const resolvedFilePath = filePath.trim() || DEFAULT_FILE_PATH;
   const { messages, connected } = useStream(bucket, streamPath, { mode: "message" });
   const { sendMessage } = useSendToStream(bucket, streamPath);
 
@@ -35,19 +42,28 @@ export default function DemoPage() {
     const url = new URL(window.location.href);
     const ns = url.searchParams.get("namespace");
     const p = url.searchParams.get("path");
+    const fp = url.searchParams.get("filePath");
     const pass = url.searchParams.get("passphrase");
+    const explicitBaseUrl = url.searchParams.get("baseUrl");
     if (ns) setNamespace(ns);
     if (p) setPath(p);
+    if (fp) setFilePath(fp);
     if (pass) setPassphrase(pass);
+    if (explicitBaseUrl) {
+      setBaseUrl(explicitBaseUrl);
+    } else if (window.location.hostname !== "streambin.xyz") {
+      setBaseUrl(window.location.origin);
+    }
   }, []);
 
   useEffect(() => {
     const url = new URL(window.location.href);
     url.searchParams.set("namespace", namespace.trim() || DEFAULT_NAMESPACE);
     url.searchParams.set("path", path.trim() || DEFAULT_PATH);
+    url.searchParams.set("filePath", filePath.trim() || DEFAULT_FILE_PATH);
     url.searchParams.set("passphrase", passphrase.trim() || DEFAULT_PASSPHRASE);
     window.history.replaceState({}, "", url.toString());
-  }, [namespace, path, passphrase]);
+  }, [namespace, path, filePath, passphrase]);
 
   useEffect(() => {
     setStatus(connected ? "Connected" : "Disconnected (retrying...)");
@@ -168,6 +184,12 @@ export default function DemoPage() {
           </div>
         )}
       </section>
+
+      <FileTester
+        bucket={bucket}
+        filePath={resolvedFilePath}
+        onFilePathChange={setFilePath}
+      />
     </main>
   );
 }

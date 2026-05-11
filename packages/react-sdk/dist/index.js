@@ -27,7 +27,6 @@ function useResolvedClient(source) {
 function useStreambinClient(options) {
   return useResolvedClient(options);
 }
-var useStreamboxClient = useStreambinClient;
 function useSendToStream(source, path) {
   const client = useResolvedClient(source);
   const sendMessage = useCallback(
@@ -125,11 +124,108 @@ function useObjectActions(source, path) {
   const remove = useCallback(() => client.removeObject(path), [client, path]);
   return { set, update, remove };
 }
+function useFileUpload(source, path) {
+  const client = useResolvedClient(source);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState(null);
+  const uploadFile = useCallback(
+    async (file, options) => {
+      setUploading(true);
+      setError(null);
+      try {
+        return await client.uploadFile(path, file, options);
+      } catch (err) {
+        const wrapped = err instanceof Error ? err : new Error("File upload failed");
+        setError(wrapped);
+        throw wrapped;
+      } finally {
+        setUploading(false);
+      }
+    },
+    [client, path]
+  );
+  const getFileUrl = useCallback(() => client.getFileUrl(path), [client, path]);
+  const removeFile = useCallback(() => client.deleteFile(path), [client, path]);
+  return { uploadFile, getFileUrl, removeFile, uploading, error };
+}
+function useFileDownload(source, path, options) {
+  const client = useResolvedClient(source);
+  const enabled = options?.enabled !== false;
+  const [bytes, setBytes] = useState(null);
+  const [blobUrl, setBlobUrl] = useState(null);
+  const [contentType, setContentType] = useState(null);
+  const [encrypted, setEncrypted] = useState(null);
+  const [metadata, setMetadata] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const blobUrlRef = useRef(null);
+  const fetchOnce = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const downloaded = await client.downloadFile(path);
+      if (blobUrlRef.current) {
+        try {
+          URL.revokeObjectURL(blobUrlRef.current);
+        } catch {
+        }
+        blobUrlRef.current = null;
+      }
+      if (!downloaded) {
+        setBytes(null);
+        setBlobUrl(null);
+        setContentType(null);
+        setEncrypted(null);
+        setMetadata(null);
+        return;
+      }
+      setBytes(downloaded.bytes);
+      setContentType(downloaded.contentType);
+      setEncrypted(downloaded.encrypted);
+      setMetadata(downloaded.metadata);
+      if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function" && typeof Blob !== "undefined") {
+        const buffer = downloaded.bytes.byteOffset === 0 && downloaded.bytes.byteLength === downloaded.bytes.buffer.byteLength ? downloaded.bytes.buffer : downloaded.bytes.slice().buffer;
+        const blob = new Blob([buffer], { type: downloaded.contentType });
+        const url = URL.createObjectURL(blob);
+        blobUrlRef.current = url;
+        setBlobUrl(url);
+      } else {
+        setBlobUrl(null);
+      }
+    } catch (err) {
+      const wrapped = err instanceof Error ? err : new Error("File download failed");
+      setError(wrapped);
+    } finally {
+      setLoading(false);
+    }
+  }, [client, path]);
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+    let cancelled = false;
+    void fetchOnce().catch(() => {
+    });
+    return () => {
+      cancelled = true;
+      if (blobUrlRef.current) {
+        try {
+          URL.revokeObjectURL(blobUrlRef.current);
+        } catch {
+        }
+        blobUrlRef.current = null;
+      }
+      void cancelled;
+    };
+  }, [enabled, fetchOnce]);
+  return { bytes, blobUrl, contentType, encrypted, metadata, loading, error, refetch: fetchOnce };
+}
 export {
+  useFileDownload,
+  useFileUpload,
   useObject,
   useObjectActions,
   useSendToStream,
   useStream,
-  useStreambinClient,
-  useStreamboxClient
+  useStreambinClient
 };

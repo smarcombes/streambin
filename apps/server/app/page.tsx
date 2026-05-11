@@ -12,9 +12,9 @@ export default function Home() {
           Streambin
         </h1>
         <p className="max-w-3xl text-base leading-7 text-black/70 dark:text-white/70">
-          End-to-end encrypted streams and docs for agents. The server stores opaque
-          ciphertext in Upstash Redis, expires streams and docs after 3 days, and
-          supports resilient SSE delivery.
+          End-to-end encrypted streams, docs, and files for agents. The server stores
+          opaque ciphertext in Upstash Redis (streams/docs) and S3 (files), expires
+          everything after 3 days, and supports resilient SSE delivery.
         </p>
         <div className="flex items-center gap-3">
           <Link

@@ -2,11 +2,38 @@
 
 // src/index.ts
 import { randomBytes, randomUUID } from "crypto";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { createReadStream, createWriteStream } from "fs";
+import { mkdir, readFile, stat, writeFile } from "fs/promises";
 import { homedir } from "os";
 import path from "path";
+import { Readable } from "stream";
+import { pipeline } from "stream/promises";
 import { Command } from "commander";
 import { StreambinClient } from "@streambin/sdk";
+var EXTENSION_MIME_TYPES = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".pdf": "application/pdf",
+  ".txt": "text/plain; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
+  ".json": "application/json",
+  ".csv": "text/csv; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".zip": "application/zip",
+  ".tar": "application/x-tar",
+  ".mp3": "audio/mpeg",
+  ".mp4": "video/mp4",
+  ".mov": "video/quicktime",
+  ".webm": "video/webm"
+};
+function inferContentType(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  return EXTENSION_MIME_TYPES[ext] ?? "application/octet-stream";
+}
 var CONFIG_DIR = path.join(homedir(), ".streambin");
 var CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 var STATE_FILE = path.join(CONFIG_DIR, "state.json");
@@ -389,6 +416,71 @@ program.command("changed-since").argument("<targetPath>").argument("<timestamp>"
   const client = clientForBucket(bucket);
   const changed = await client.hasObjectChangedSince(targetPath, Number(timestamp));
   console.log(changed ? "true" : "false");
+});
+function buildStreamingSource(filePath, size, contentType) {
+  return {
+    size,
+    contentType,
+    stream() {
+      const nodeStream = createReadStream(filePath);
+      return Readable.toWeb(nodeStream);
+    }
+  };
+}
+program.command("upload-file").description("Upload a local file to a namespaced path (public, expires in 3 days, encrypted by default)").argument("<targetPath>", "Path within the bucket namespace (e.g. assets/logo.png)").argument("<filePath>", "Local file path to upload").option("--content-type <type>", "Override the inferred Content-Type").option("--no-encrypt", "Upload as plaintext (default: encrypt with bucket passphrase)").option("--chunk-size <bytes>", "Encrypted chunk size in bytes (default: 8 MiB)").option("--multipart", "Force multipart upload").option("--no-multipart", "Disable multipart upload").option("--part-size <bytes>", "Multipart part size in bytes (min 5MB, plaintext mode only)").action(
+  async (targetPath, filePath, opts) => {
+    const bucket = getSelectedBucket(await readConfig());
+    const client = clientForBucket(bucket);
+    const stats = await stat(filePath);
+    if (!stats.isFile()) {
+      throw new Error(`Not a file: ${filePath}`);
+    }
+    const contentType = opts.contentType ?? inferContentType(filePath);
+    const encrypted = opts.encrypt !== false;
+    const chunkSize = opts.chunkSize ? Number(opts.chunkSize) : void 0;
+    let source;
+    if (stats.size > 16 * 1024 * 1024) {
+      source = buildStreamingSource(filePath, stats.size, contentType);
+    } else {
+      const buffer = await readFile(filePath);
+      source = Uint8Array.from(buffer);
+    }
+    const multipart = typeof opts.multipart === "boolean" || opts.partSize ? { enabled: opts.multipart, partSize: opts.partSize ? Number(opts.partSize) : void 0 } : void 0;
+    const result = await client.uploadFile(targetPath, source, {
+      contentType,
+      encrypted,
+      chunkSize,
+      multipart
+    });
+    console.log(JSON.stringify(result, null, 2));
+  }
+);
+program.command("file-url").description("Print the stable Streambin URL that redirects to the file's public URL (serves ciphertext for encrypted files)").argument("<targetPath>").action(async (targetPath) => {
+  const bucket = getSelectedBucket(await readConfig());
+  const client = clientForBucket(bucket);
+  console.log(client.getFileUrl(targetPath));
+});
+program.command("download-file").description("Download a file (auto-decrypts encrypted files using the bucket passphrase)").argument("<targetPath>").argument("<destination>", "Local destination file path").action(async (targetPath, destination) => {
+  const bucket = getSelectedBucket(await readConfig());
+  const client = clientForBucket(bucket);
+  const downloaded = await client.downloadFileStream(targetPath);
+  if (!downloaded) {
+    throw new Error(`File not found: ${targetPath}`);
+  }
+  const nodeStream = Readable.fromWeb(
+    downloaded.stream
+  );
+  await pipeline(nodeStream, createWriteStream(destination));
+  const stats = await stat(destination);
+  console.log(
+    `Wrote ${stats.size} bytes to ${destination} (${downloaded.encrypted ? "decrypted" : "plaintext"}, ${downloaded.contentType})`
+  );
+});
+program.command("remove-file").description("Delete a file from the bucket (metadata + S3 object)").argument("<targetPath>").action(async (targetPath) => {
+  const bucket = getSelectedBucket(await readConfig());
+  const client = clientForBucket(bucket);
+  await client.deleteFile(targetPath);
+  console.log("ok");
 });
 program.parseAsync(process.argv).catch((error) => {
   console.error(error.message);
