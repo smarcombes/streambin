@@ -1,6 +1,6 @@
 {
   "name": "@streambin/crypto",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "End-to-end encryption primitives for Streambin using Web Crypto API",
   "license": "MIT",
   "author": "Streambin Contributors",

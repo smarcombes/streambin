@@ -105,7 +105,27 @@ if [ "$NEW_VERSION" != "$CURRENT_VERSION" ]; then
       echo "  ✓ $dir/package.json"
     fi
   done
-  
+
+  # apps/server is a standalone npm project that pulls @streambin/* from npm.
+  # Bump its dep ranges so deploys ship the just-published SDK versions.
+  if [ -f "apps/server/package.json" ]; then
+    node -e "
+      const fs = require('fs');
+      const path = 'apps/server/package.json';
+      const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+      const bump = (deps) => {
+        if (!deps) return;
+        for (const k of Object.keys(deps)) {
+          if (k.startsWith('@streambin/')) deps[k] = '^$NEW_VERSION';
+        }
+      };
+      bump(pkg.dependencies);
+      bump(pkg.devDependencies);
+      fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+    "
+    echo "  ✓ apps/server/package.json (@streambin/* → ^$NEW_VERSION)"
+  fi
+
   echo "✅ Version updated to $NEW_VERSION"
   echo ""
 else
@@ -200,6 +220,8 @@ read -p "🌐 Deploy server to Vercel? (y/n) " -n 1 -r
 echo ""
 if [[ $REPLY =~ ^[Yy]$ ]]; then
   echo "🚀 Deploying to Vercel..."
+  echo "  ↳ refreshing apps/server lockfile with @streambin@$NEW_VERSION"
+  (cd apps/server && pnpm install --no-frozen-lockfile)
   cd apps/server
   vercel --prod
   cd ../..

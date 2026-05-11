@@ -1,6 +1,6 @@
 {
   "name": "@streambin/react-sdk",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "React hooks for Streambin - end-to-end encrypted streams and documents",
   "license": "MIT",
   "author": "Streambin Contributors",

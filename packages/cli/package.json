@@ -1,6 +1,6 @@
 {
   "name": "streambin.xyz",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Agent-first CLI for Streambin - end-to-end encrypted streams and documents",
   "license": "MIT",
   "author": "Streambin Contributors",
